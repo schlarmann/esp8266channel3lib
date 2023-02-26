@@ -1,0 +1,34 @@
+{
+    "name": "ESP8266 Channel 3 TV out Library",
+    "version": "0.1.0",
+    "keywords": "tvout, esp8266, tv, graphics",
+    "description": "A library to emulate an analogue tv station on channel 3 with an ESP8266",
+    "repository":
+    {
+      "type": "git",
+      "url": "https://github.com/schlarmann/esp8266channel3lib"
+    },
+    "authors":
+    [
+      {
+          "name": "Paul Schlarmann",
+          "url": "https://github.com/schlarmann"
+      }
+    ],
+    "frameworks": "arduino",
+    "platforms": [
+      "espressif8266"
+    ],
+    "headers": [
+        "esp8266channel3lib.h"
+    ],	
+    "examples": [
+        {
+            "name": "SimpleTextDemo",
+            "base": "examples/1_SimpleTextDemo",
+            "files": [
+                "1_SimpleTextDemo.ino"
+            ]
+        }
+    ]
+  }
