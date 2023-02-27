@@ -7,7 +7,6 @@
 #include "ets_sys.h"
 #include "video_broadcast.h"
 
-extern int gframe;
 extern uint8_t * frontframe;
 extern int16_t ProjectionMatrix[16];
 extern int16_t ModelviewMatrix[16];

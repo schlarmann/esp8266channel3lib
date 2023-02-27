@@ -19,25 +19,16 @@
 //Stuff that should be for the header:
 
 #include <c_types.h>
-
-//Framebuffer width/height
-#define FBW 232 //Must be divisible by 8.  These are actually "double-pixels" used for double-resolution monochrome width.
-#define FBW2 (FBW/2) //Actual width in true pixels.
-#ifdef PAL
-#define FBH 264
-#else
-#define FBH 220
-#endif
+#include "common.h"
 
 #define DMABUFFERDEPTH 3
 
-extern int gframe; //Current frame #
-extern uint16_t framebuffer[((FBW2/4)*(FBH))*2]; // /4 = 4 pixels per word (*2 = double buffer)
-extern uint32_t last_internal_frametime;
-extern int8_t jam_color; //Used to test frequency out
+void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType);
 
-
-void ICACHE_FLASH_ATTR video_broadcast_init();
+uint16_t *video_broadcast_get_framebuffer();
+int video_broadcast_get_frame_number();
+uint16_t video_broadcast_framebuffer_width();
+uint16_t video_broadcast_framebuffer_height();
 
 #endif
 

@@ -1,6 +1,6 @@
 {
     "name": "ESP8266 Channel 3 TV out Library",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "keywords": "tvout, esp8266, tv, graphics",
     "description": "A library to emulate an analogue tv station on channel 3 with an ESP8266",
     "repository":
@@ -24,11 +24,19 @@
     ],	
     "examples": [
         {
-            "name": "SimpleTextDemo",
-            "base": "examples/1_SimpleTextDemo",
+            "name": "SimpleTextDemo(PAL)",
+            "base": "examples/1_SimpleTextDemoPAL",
             "files": [
-                "1_SimpleTextDemo.ino"
+                "1_SimpleTextDemoPAL.ino"
             ]
-        }
+        },
+
+        {
+          "name": "SimpleTextDemo(NTSC)",
+          "base": "examples/1_SimpleTextDemoNTSC",
+          "files": [
+              "1_SimpleTextDemoNTSC.ino"
+          ]
+      }
     ]
   }

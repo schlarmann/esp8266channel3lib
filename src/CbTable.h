@@ -12,16 +12,11 @@
 #define FT_CLOSE 6
 #define FT_MAX_d 7
 
+#define VIDEO_LINES_PAL 625
 extern uint8_t CbLookupPAL[313];
+#define VIDEO_LINES_NTSC 525
 extern uint8_t CbLookupNTSC[263];
 
-#ifdef PAL
-#define VIDEO_LINES 625
-#define CbLookup CbLookupPAL
-#else
-#define VIDEO_LINES 525
-#define CbLookup CbLookupNTSC
-#endif
 
 #endif
 

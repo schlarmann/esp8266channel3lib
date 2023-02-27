@@ -54,32 +54,29 @@ Extra copyright info:
 #define WS_I2S_BCK 1  //Can't be less than 1.
 #define WS_I2S_DIV 2
 
-#ifdef PAL
-  #define LINE_BUFFER_LENGTH 160
+//Framebuffer width/height
+#define FBW 232 //Must be divisible by 8.  These are actually "double-pixels" used for double-resolution monochrome width.
+#define FBW2 (FBW/2) //Actual width in true pixels.
+#define FBH_PAL 264
+#define FBH_NTSC 220
 
-  /* PAL signals */
-  #define SHORT_SYNC_INTERVAL    5
-  #define LONG_SYNC_INTERVAL    75
-  #define NORMAL_SYNC_INTERVAL  10
-  #define LINE_SIGNAL_INTERVAL 150
 
-  #define COLORBURST_INTERVAL 10
-#else
-  #define LINE_BUFFER_LENGTH 159
+/* PAL signals */
+#define LINE_BUFFER_LENGTH_PAL 160
+#define SHORT_SYNC_INTERVAL_PAL    5
+#define LONG_SYNC_INTERVAL_PAL    75
+#define NORMAL_SYNC_INTERVAL_PAL  10
+#define LINE_SIGNAL_INTERVAL_PAL 150
+#define COLORBURST_INTERVAL_PAL 10
 
-  /* NTSC signals */
-  #define SHORT_SYNC_INTERVAL    6
-  #define LONG_SYNC_INTERVAL    73
-  #define SERRATION_PULSE_INT   67
-  #define NORMAL_SYNC_INTERVAL  12
-  #define LINE_SIGNAL_INTERVAL 147
-
-  #define COLORBURST_INTERVAL 4
-#endif
-
-#define I2SDMABUFLEN (LINE_BUFFER_LENGTH)		//Length of one buffer, in 32-bit words.
-//#define LINE16LEN (I2SDMABUFLEN*2)
-#define LINE32LEN I2SDMABUFLEN
+/* NTSC signals */
+#define LINE_BUFFER_LENGTH_NTSC 159
+#define SHORT_SYNC_INTERVAL_NTSC    6
+#define LONG_SYNC_INTERVAL_NTSC    73
+#define SERRATION_PULSE_INT_NTSC   67
+#define NORMAL_SYNC_INTERVAL_NTSC  12
+#define LINE_SIGNAL_INTERVAL_NTSC 147
+#define COLORBURST_INTERVAL_NTSC 4
 
 //Bit clock @ 80MHz = 12.5ns
 //Word clock = 400ns
@@ -88,37 +85,39 @@ Extra copyright info:
 
 #define LINETYPES 6
 
-//WS_I2S_DIV - if 1 will actually be 2.  Can't be less than 2.
-
-//		CLK_I2S = 160MHz / I2S_CLKM_DIV_NUM
-//		BCLK = CLK_I2S / I2S_BCK_DIV_NUM
-//		WS = BCLK/ 2 / (16 + I2S_BITS_MOD)
-//		Note that I2S_CLKM_DIV_NUM must be >5 for I2S data
-//		I2S_CLKM_DIV_NUM - 5-127
-//		I2S_BCK_DIV_NUM - 2-127
-
-
-
 //I2S DMA buffer descriptors
 static struct sdio_queue i2sBufDesc[DMABUFFERDEPTH];
-uint32_t i2sBD[I2SDMABUFLEN*DMABUFFERDEPTH];
+uint32_t *i2sBD;
 
 //Queue which contains empty DMA buffers
 
 //This routine is called as soon as the DMA routine has something to tell us. All we
 //handle here is the RX_EOF_INT status, which indicate the DMA has sent a buffer whose
 //descriptor has the 'EOF' field set to 1.
-int gline = 0;
-int gframe = 0;
-static int linescratch;
-uint16_t framebuffer[((FBW2/4)*(FBH))*2];
+LOCAL int gline = 0;
+LOCAL int gframe = 0; //Current frame #
+LOCAL int linescratch;
+LOCAL uint16_t fbw;
+LOCAL uint16_t fbh;
+LOCAL uint16_t *framebuffer;
+
+LOCAL uint8_t *CbLookup;
+
+LOCAL uint8_t lineBufferLen;
+LOCAL uint8_t shortSyncInterval;
+LOCAL uint8_t longSyncInterval;
+LOCAL uint8_t normalSyncInterval;
+LOCAL uint8_t lineSignalInterval;
+LOCAL uint8_t colorburstInterval;
 
 const uint32_t * tablestart = &premodulated_table[0];
 const uint32_t * tablept = &premodulated_table[0];
 const uint32_t * tableend = &premodulated_table[PREMOD_ENTRIES*PREMOD_SIZE];
-uint32_t * curdma;
+LOCAL uint32_t * curdma;
 
-uint8_t pixline; //line number currently being written out.
+LOCAL uint8_t pixline; //line number currently being written out.
+
+LOCAL channel3VideoType_t videoStandard;
 
 //Each "qty" is 32 bits, or .4us
 LOCAL void fillwith( uint16_t qty, uint8_t color )
@@ -145,95 +144,78 @@ LOCAL void FT_STA() // Short Sync
 {
 	pixline = 0; //Reset the framebuffer out line count (can be done multiple times)
 
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LONG_SYNC_INTERVAL, BLACK_LEVEL );
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (SHORT_SYNC_INTERVAL+LONG_SYNC_INTERVAL+SHORT_SYNC_INTERVAL), BLACK_LEVEL );
+	fillwith( shortSyncInterval, SYNC_LEVEL );
+	fillwith( longSyncInterval, BLACK_LEVEL );
+	fillwith( shortSyncInterval, SYNC_LEVEL );
+	fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+shortSyncInterval), BLACK_LEVEL );
 }
 
 
 LOCAL void FT_STB() // Long Sync
 {
-	#ifdef PAL
-		#define FT_STB_BLACK_INTERVAL SHORT_SYNC_INTERVAL
-	#else
-		#define FT_STB_BLACK_INTERVAL NORMAL_SYNC_INTERVAL
-	#endif
-	fillwith( LONG_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( FT_STB_BLACK_INTERVAL, BLACK_LEVEL );
-	fillwith( LONG_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (LONG_SYNC_INTERVAL+FT_STB_BLACK_INTERVAL+LONG_SYNC_INTERVAL), BLACK_LEVEL );
+	fillwith( longSyncInterval, SYNC_LEVEL );
+	if(videoStandard == PAL){
+		fillwith( shortSyncInterval, BLACK_LEVEL );
+	} else {
+		fillwith( normalSyncInterval, BLACK_LEVEL );
+	}
+	fillwith( longSyncInterval, SYNC_LEVEL );
+	if(videoStandard == PAL){
+		fillwith( lineBufferLen - (longSyncInterval+shortSyncInterval+longSyncInterval), BLACK_LEVEL );
+	} else {
+		fillwith( lineBufferLen - (longSyncInterval+normalSyncInterval+longSyncInterval), BLACK_LEVEL );
+	}
 }
 
 //Margin at top and bottom of screen (Mostly invisible)
 //Closed Captioning would go somewhere in here, I guess?
 LOCAL void FT_B() // Black
 {
-	fillwith( NORMAL_SYNC_INTERVAL, SYNC_LEVEL );
+	fillwith( normalSyncInterval, SYNC_LEVEL );
 	fillwith( 2, BLACK_LEVEL );
-	fillwith( COLORBURST_INTERVAL, COLORBURST_LEVEL );
-	fillwith( LINE32LEN-NORMAL_SYNC_INTERVAL-2-COLORBURST_INTERVAL, (pixline<1)?GRAY_LEVEL:BLACK_LEVEL);
+	fillwith( colorburstInterval, COLORBURST_LEVEL );
+	fillwith( lineBufferLen-normalSyncInterval-2-colorburstInterval, (pixline<1)?GRAY_LEVEL:BLACK_LEVEL);
 	//Gray seems to help sync if at top.  TODO: Investigate if white works even better!
 }
 
 LOCAL void FT_SRA() // Short to long
 {
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LONG_SYNC_INTERVAL, BLACK_LEVEL );
-	#ifdef PAL
-	fillwith( LONG_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (SHORT_SYNC_INTERVAL+LONG_SYNC_INTERVAL+LONG_SYNC_INTERVAL), BLACK_LEVEL );
-	#else
-	fillwith( SERRATION_PULSE_INT, SYNC_LEVEL );
-	fillwith( LINE32LEN - (SHORT_SYNC_INTERVAL+LONG_SYNC_INTERVAL+SERRATION_PULSE_INT), BLACK_LEVEL );
-	#endif
+	fillwith( shortSyncInterval, SYNC_LEVEL );
+	fillwith( longSyncInterval, BLACK_LEVEL );
+	if(videoStandard == PAL){
+		fillwith( longSyncInterval, SYNC_LEVEL );
+		fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+longSyncInterval), BLACK_LEVEL );
+	} else {
+		fillwith( SERRATION_PULSE_INT_NTSC, SYNC_LEVEL );
+		fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+SERRATION_PULSE_INT_NTSC), BLACK_LEVEL );
+	}
 }
 
 LOCAL void FT_SRB() // Long to short
 {
-	#ifdef PAL
-	fillwith( LONG_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( SHORT_SYNC_INTERVAL, BLACK_LEVEL );
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (LONG_SYNC_INTERVAL+SHORT_SYNC_INTERVAL+SHORT_SYNC_INTERVAL), BLACK_LEVEL );
-	#else
-	fillwith( SERRATION_PULSE_INT, SYNC_LEVEL );
-	fillwith( NORMAL_SYNC_INTERVAL, BLACK_LEVEL );
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (SERRATION_PULSE_INT+NORMAL_SYNC_INTERVAL+SHORT_SYNC_INTERVAL), BLACK_LEVEL );
-	#endif
+	if(videoStandard == PAL){
+		fillwith( longSyncInterval, SYNC_LEVEL );
+		fillwith( shortSyncInterval, BLACK_LEVEL );
+		fillwith( shortSyncInterval, SYNC_LEVEL );
+		fillwith( lineBufferLen - (longSyncInterval+shortSyncInterval+shortSyncInterval), BLACK_LEVEL );
+	} else {
+		fillwith( SERRATION_PULSE_INT_NTSC, SYNC_LEVEL );
+		fillwith( normalSyncInterval, BLACK_LEVEL );
+		fillwith( shortSyncInterval, SYNC_LEVEL );
+		fillwith( lineBufferLen - (SERRATION_PULSE_INT_NTSC+normalSyncInterval+shortSyncInterval), BLACK_LEVEL );
+	}
 }
 
 LOCAL void FT_LIN() // Line Signal
 {
 	//TODO: Make this do something useful.
-	fillwith( NORMAL_SYNC_INTERVAL, SYNC_LEVEL );
+	fillwith( normalSyncInterval, SYNC_LEVEL );
 	fillwith( 1, BLACK_LEVEL );
-	fillwith( COLORBURST_INTERVAL, COLORBURST_LEVEL );
+	fillwith( colorburstInterval, COLORBURST_LEVEL );
 	fillwith( 11, BLACK_LEVEL );
-#define HDR_SPD (NORMAL_SYNC_INTERVAL+1+COLORBURST_INTERVAL+11)
 
 	int fframe = gframe & 1;
-//#define FILLTEST
-#ifdef FILLTEST
-
-	fillwith( FBW/32, BLACK_LEVEL );
-	fillwith( FBW/32, 1 );
-	fillwith( FBW/32, 2 );
-	fillwith( FBW/32, 3 );
-	fillwith( FBW/32, 4 );
-	fillwith( FBW/32, 5 );
-	fillwith( FBW/32, 6 );
-	fillwith( FBW/32, 0 );
-	fillwith( FBW/32, 0 );
-	fillwith( FBW/32, 0 );
-	fillwith( FBW/32, 0 );
-	fillwith( FBW/32, 0 );
-	fillwith( FBW/8, BLACK_LEVEL );
-	fillwith( LINE32LEN - (HDR_SPD+FBW/2), BLACK_LEVEL );
-
-#else
-	uint16_t * fbs = (uint16_t*)(&framebuffer[ ( (pixline * (FBW2/2)) + ( ((FBW2/2)*(FBH))*(fframe)) ) / 2 ]);
+	uint16_t * fbs = (uint16_t*)(&framebuffer[ ( (pixline * (FBW2/2)) + ( ((FBW2/2)*(fbh))*(fframe)) ) / 2 ]);
 
 	for( linescratch = 0; linescratch < FBW2/4; linescratch++ )
 	{
@@ -246,32 +228,29 @@ LOCAL void FT_LIN() // Line Signal
 		if( tablept >= tableend ) tablept = tablept - tableend + tablestart;
 	}
 
-	fillwith( LINE32LEN - (HDR_SPD+FBW2), BLACK_LEVEL); //WHITE_LEVEL );
-#endif
+	fillwith( lineBufferLen - ((normalSyncInterval+1+colorburstInterval+11)+FBW2), BLACK_LEVEL); //WHITE_LEVEL );
 
 	pixline++;
 }
 
 static uint32_t systimex = 0;
 static uint32_t systimein = 0;
-uint32_t last_internal_frametime;
 LOCAL void FT_CLOSE_M() // End Frame
 {
-	#ifdef PAL
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LONG_SYNC_INTERVAL, BLACK_LEVEL );
-	fillwith( SHORT_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( LINE32LEN - (SHORT_SYNC_INTERVAL+LONG_SYNC_INTERVAL+SHORT_SYNC_INTERVAL), BLACK_LEVEL );
-	#else
-	fillwith( NORMAL_SYNC_INTERVAL, SYNC_LEVEL );
-	fillwith( 2, BLACK_LEVEL );
-	fillwith( 4, COLORBURST_LEVEL );
-	fillwith( LINE32LEN-NORMAL_SYNC_INTERVAL-6, WHITE_LEVEL );
-	#endif
+	if(videoStandard == PAL){
+		fillwith( shortSyncInterval, SYNC_LEVEL );
+		fillwith( longSyncInterval, BLACK_LEVEL );
+		fillwith( shortSyncInterval, SYNC_LEVEL );
+		fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+shortSyncInterval), BLACK_LEVEL );	
+	} else {
+		fillwith( normalSyncInterval, SYNC_LEVEL );
+		fillwith( 2, BLACK_LEVEL );
+		fillwith( 4, COLORBURST_LEVEL );
+		fillwith( lineBufferLen-normalSyncInterval-6, WHITE_LEVEL );
+	}
 	gline = -1;
 	gframe++;
 
-	last_internal_frametime = systimex;
 	systimex = 0;
 	systimein = system_get_time();
 }
@@ -293,7 +272,6 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 		//The DMA subsystem is done with this block: Push it on the queue so it can be re-used.
 		finishedDesc=(struct sdio_queue*)READ_PERI_REG(SLC_RX_EOF_DES_ADDR);
 		curdma = (uint32_t*)finishedDesc->buf_ptr;
-		//ets_uart_printf("finishedDesc: %p, curdma: %p\n", finishedDesc, curdma);
 		if(curdma != NULL){
 			//*startdma = premodulated_table[0];
 			int lk = 0;
@@ -312,11 +290,31 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 }
 
 //Initialize I2S subsystem for DMA circular buffer use
-void ICACHE_FLASH_ATTR video_broadcast_init() {
+void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 	int x = 0, y;
+	videoStandard = videoType;
+	if(videoStandard == PAL){
+		lineBufferLen = LINE_BUFFER_LENGTH_PAL;
+		shortSyncInterval = SHORT_SYNC_INTERVAL_PAL;
+		longSyncInterval = LONG_SYNC_INTERVAL_PAL;
+		normalSyncInterval = NORMAL_SYNC_INTERVAL_PAL;
+		lineSignalInterval = LINE_SIGNAL_INTERVAL_PAL;
+		colorburstInterval = COLORBURST_INTERVAL_PAL;
+		fbh = FBH_PAL;
+		CbLookup = CbLookupPAL;
+	} else {
+		lineBufferLen = LINE_BUFFER_LENGTH_NTSC;
+		shortSyncInterval = SHORT_SYNC_INTERVAL_NTSC;
+		longSyncInterval = LONG_SYNC_INTERVAL_NTSC;
+		normalSyncInterval = NORMAL_SYNC_INTERVAL_NTSC;
+		lineSignalInterval = LINE_SIGNAL_INTERVAL_NTSC;
+		colorburstInterval = COLORBURST_INTERVAL_NTSC;
+		fbh = FBH_NTSC;
+		CbLookup = CbLookupNTSC;
+	}
 
-	//uart_buff_switch(0);
-	//ets_install_uart_printf();
+	framebuffer = (uint16_t *) malloc(sizeof(uint16_t) * ( (FBW2/4)*fbh ) *2);
+	i2sBD = (uint32_t *) malloc(sizeof(uint32_t) * (lineBufferLen*DMABUFFERDEPTH));
 
 	//Bits are shifted out
 
@@ -326,9 +324,9 @@ void ICACHE_FLASH_ATTR video_broadcast_init() {
 		i2sBufDesc[x].owner=1;
 		i2sBufDesc[x].eof=1;
 		i2sBufDesc[x].sub_sof=0;
-		i2sBufDesc[x].datalen=I2SDMABUFLEN*4;
-		i2sBufDesc[x].blocksize=I2SDMABUFLEN*4;
-		i2sBufDesc[x].buf_ptr=(uint32_t)&i2sBD[x*I2SDMABUFLEN];
+		i2sBufDesc[x].datalen=lineBufferLen*4;
+		i2sBufDesc[x].blocksize=lineBufferLen*4;
+		i2sBufDesc[x].buf_ptr=(uint32_t)&i2sBD[x*lineBufferLen];
 		i2sBufDesc[x].unused=0;
 		i2sBufDesc[x].next_link_ptr=(int)((x<(DMABUFFERDEPTH-1))?(&i2sBufDesc[x+1]):(&i2sBufDesc[0]));
 	}
@@ -431,3 +429,16 @@ void ICACHE_FLASH_ATTR video_broadcast_init() {
 }
 
 
+uint16_t *video_broadcast_get_framebuffer(){
+	return framebuffer;
+}
+int video_broadcast_get_frame_number(){
+	return gframe;
+}
+uint16_t video_broadcast_framebuffer_width(){
+	return FBW;
+}
+
+uint16_t video_broadcast_framebuffer_height(){
+	return fbh;
+}

@@ -14,6 +14,7 @@
 // --- Includes ---
 #include <Arduino.h>
 
+#include "common.h"
 #include "video_broadcast.h"
 #include "3d.h"
 
@@ -27,6 +28,6 @@ typedef void (*loadFrameCB)(uint8_t *frame);
 
 // --- Public Functions ---
 
-void ICACHE_FLASH_ATTR channel3Init(loadFrameCB loadFrameCB);
+void ICACHE_FLASH_ATTR channel3Init(channel3VideoType_t videoType, loadFrameCB loadFrameCB);
 
 #endif /* ESP8266CHANNEL3LIB_H */

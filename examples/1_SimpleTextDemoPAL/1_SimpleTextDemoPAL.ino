@@ -1,5 +1,3 @@
-// Uncomment for PAL video output
-//#define PAL
 #include <esp8266channel3lib.h>
 
 uint32_t frameCount = 0;
@@ -28,7 +26,7 @@ void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
 
 void setup() {
   system_update_cpu_freq( SYS_CPU_160MHZ );
-  channel3Init(&loadFrame);
+  channel3Init(PAL, &loadFrame);
 }
 
 void loop() {

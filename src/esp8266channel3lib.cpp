@@ -13,11 +13,8 @@
 #include "esp8266channel3lib.h"
 
 // --- Defines ---
-#ifdef PAL
-    #define FRAME_FREQUENCY 50
-#else
-    #define FRAME_FREQUENCY 60
-#endif
+#define FRAME_FREQUENCY_PAL 50
+#define FRAME_FREQUENCY_NTSC 60
 
 // --- Marcos ---
 
@@ -25,6 +22,7 @@
 
 // --- Private Vars ---
 static loadFrameCB frameCB;
+static channel3VideoType_t videoStandard;
 static os_timer_t runTimer;
 
 // --- Private Functions ---
@@ -38,10 +36,11 @@ LOCAL void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
 
 LOCAL void ICACHE_FLASH_ATTR frameTimer(){
 	static uint8_t lastframe = 0;
-	uint8_t tbuffer = !(gframe&1);
+	uint8_t tbuffer = !(video_broadcast_get_frame_number()&1);
 	if( lastframe != tbuffer )
 	{
-		frontframe = (uint8_t*)&framebuffer[((FBW2/4)*FBH)*tbuffer];
+		frontframe = (uint8_t*)&video_broadcast_get_framebuffer()
+            [ ( (video_broadcast_framebuffer_width()/8) *video_broadcast_framebuffer_height() ) * tbuffer];
 		loadFrame(frontframe);
 		lastframe = tbuffer;
 	}
@@ -50,11 +49,17 @@ LOCAL void ICACHE_FLASH_ATTR frameTimer(){
 // --- Public Vars ---
 
 // --- Public Functions ---
-void ICACHE_FLASH_ATTR channel3Init(loadFrameCB loadFrameCB){
+void ICACHE_FLASH_ATTR channel3Init(channel3VideoType_t videoType, loadFrameCB loadFrameCB){
+    videoStandard = videoType;
     frameCB = loadFrameCB;
-    int period = 1000 / FRAME_FREQUENCY;
+    int period;
+    if(videoStandard == PAL){
+        period = 1000 / FRAME_FREQUENCY_PAL;
+    } else {
+        period = 1000 / FRAME_FREQUENCY_NTSC;
+    }
     os_timer_setfn(&runTimer, (os_timer_func_t *)frameTimer, NULL);
     os_timer_arm(&runTimer, period, 1);
 
-    video_broadcast_init();
+    video_broadcast_init(videoStandard);
 }
