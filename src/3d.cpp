@@ -285,7 +285,7 @@ void CNFGTackSegment( int x0, int y0, int x1, int y1 )
 	int deltay = y1 - y0;
 	int error = 0;
 	int x;
-	int sy = LABS(deltay);
+	//int sy = LABS(deltay);
 	int ysg = (y0>y1)?-1:1;
 	int y = y0;
 

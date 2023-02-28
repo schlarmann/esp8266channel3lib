@@ -97,7 +97,6 @@ uint32_t *i2sBD;
 LOCAL int gline = 0;
 LOCAL int gframe = 0; //Current frame #
 LOCAL int linescratch;
-LOCAL uint16_t fbw;
 LOCAL uint16_t fbh;
 LOCAL uint16_t *framebuffer;
 
@@ -262,7 +261,6 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 	//portBASE_TYPE HPTaskAwoken=0;
 	struct sdio_queue *finishedDesc;
 	uint32 slc_intr_status;
-	int x;
 
 	slc_intr_status = READ_PERI_REG(SLC_INT_STATUS);
 	//clear all intr flags
@@ -291,7 +289,7 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 
 //Initialize I2S subsystem for DMA circular buffer use
 void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
-	int x = 0, y;
+	int x = 0;
 	videoStandard = videoType;
 	if(videoStandard == PAL){
 		lineBufferLen = LINE_BUFFER_LENGTH_PAL;
