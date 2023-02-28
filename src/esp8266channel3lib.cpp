@@ -28,7 +28,7 @@ static os_timer_t runTimer;
 // --- Private Functions ---
 LOCAL void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
 {
-   ets_memset( ff, 0, ((232/4)*220) );
+   ets_memset( ff, 0, ((video_broadcast_framebuffer_width()/4)*video_broadcast_framebuffer_height()) );
    if(frameCB != NULL){
     frameCB(ff); //callback
    }
