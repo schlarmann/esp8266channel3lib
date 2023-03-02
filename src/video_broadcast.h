@@ -24,6 +24,7 @@
 #define DMABUFFERDEPTH 3
 
 void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType);
+void video_broadcast_deinit();
 
 uint16_t *video_broadcast_get_framebuffer();
 int video_broadcast_get_frame_number();

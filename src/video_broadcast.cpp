@@ -311,6 +311,7 @@ void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 		CbLookup = CbLookupNTSC;
 	}
 
+	// Create dynamic data
 	framebuffer = (uint16_t *) malloc(sizeof(uint16_t) * ( (FBW2/4)*fbh ) *2);
 	i2sBD = (uint32_t *) malloc(sizeof(uint32_t) * (lineBufferLen*DMABUFFERDEPTH));
 
@@ -424,6 +425,31 @@ void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 
 	//Start transmission
 	SET_PERI_REG_MASK(I2SCONF,I2S_I2S_TX_START);
+}
+
+
+void video_broadcast_deinit() {
+	// Reset I2S subsystem
+	CLEAR_PERI_REG_MASK(I2SCONF,I2S_I2S_RESET_MASK);
+	SET_PERI_REG_MASK(I2SCONF,I2S_I2S_RESET_MASK);
+	CLEAR_PERI_REG_MASK(I2SCONF,I2S_I2S_RESET_MASK);
+
+	// disable DMA intr in cpu
+	ets_isr_mask(1<<ETS_SLC_INUM);
+	// Deattach the DMA interrupt
+	ets_isr_attach(ETS_SLC_INUM, NULL, NULL);
+	// Clear DMA Interrupt
+	WRITE_PERI_REG(SLC_INT_ENA,  0x00);
+	//Clear DMA int flags
+	SET_PERI_REG_MASK(SLC_INT_CLR,  0xffffffff);
+	CLEAR_PERI_REG_MASK(SLC_INT_CLR,  0xffffffff);
+	// Reset DMA
+	SET_PERI_REG_MASK(SLC_CONF0, SLC_RXLINK_RST|SLC_TXLINK_RST);
+	CLEAR_PERI_REG_MASK(SLC_CONF0, SLC_RXLINK_RST|SLC_TXLINK_RST);
+
+	// free dynamic data
+	free(framebuffer);
+	free(i2sBD);
 }
 
 

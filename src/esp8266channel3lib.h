@@ -29,5 +29,8 @@ typedef void (*loadFrameCB)(uint8_t *frame);
 // --- Public Functions ---
 
 void ICACHE_FLASH_ATTR channel3Init(channel3VideoType_t videoType, loadFrameCB loadFrameCB);
+void channel3Deinit();
+void channel3StopBroadcast();
+void channel3StartBroadcast();
 
 #endif /* ESP8266CHANNEL3LIB_H */

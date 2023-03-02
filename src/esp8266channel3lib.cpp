@@ -24,6 +24,8 @@
 static loadFrameCB frameCB;
 static channel3VideoType_t videoStandard;
 static os_timer_t runTimer;
+static int runTimerPeriod;
+static bool runFlag;
 
 // --- Private Functions ---
 LOCAL void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
@@ -52,14 +54,34 @@ LOCAL void ICACHE_FLASH_ATTR frameTimer(){
 void ICACHE_FLASH_ATTR channel3Init(channel3VideoType_t videoType, loadFrameCB loadFrameCB){
     videoStandard = videoType;
     frameCB = loadFrameCB;
-    int period;
     if(videoStandard == PAL){
-        period = 1000 / FRAME_FREQUENCY_PAL;
+        runTimerPeriod = 1000 / FRAME_FREQUENCY_PAL;
     } else {
-        period = 1000 / FRAME_FREQUENCY_NTSC;
+        runTimerPeriod = 1000 / FRAME_FREQUENCY_NTSC;
     }
     os_timer_setfn(&runTimer, (os_timer_func_t *)frameTimer, NULL);
-    os_timer_arm(&runTimer, period, 1);
+    os_timer_arm(&runTimer, runTimerPeriod, 1);
+    runFlag = true;
 
     video_broadcast_init(videoStandard);
+}
+
+void channel3Deinit(){
+    channel3StopBroadcast();
+    video_broadcast_deinit();
+}
+
+void channel3StopBroadcast(){
+    if(runFlag){
+        os_timer_disarm(&runTimer);
+        runFlag = false;
+    }
+}
+
+void channel3StartBroadcast(){
+    if(!runFlag){
+        os_timer_setfn(&runTimer, (os_timer_func_t *)frameTimer, NULL);
+        os_timer_arm(&runTimer, runTimerPeriod, 1);
+        runFlag = true;
+    }
 }

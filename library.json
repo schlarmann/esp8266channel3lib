@@ -1,6 +1,6 @@
 {
     "name": "esp8266channel3lib",
-    "version": "0.2.2",
+    "version": "0.3.0",
     "keywords": "tvout, esp8266, tv, graphics",
     "description": "A library to emulate an analogue tv station on channel 3 with an ESP8266",
     "repository":
@@ -37,6 +37,13 @@
           "files": [
               "1_SimpleTextDemoNTSC.ino"
           ]
-      }
+        },
+        {
+            "name": "OTA demo",
+            "base": "examples/2_OTADemo",
+            "files": [
+                "2_OTADemo.ino"
+            ]
+        }
     ]
   }
