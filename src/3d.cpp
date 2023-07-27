@@ -19,7 +19,6 @@
 #define m33 15
 
 void (*CNFGTackPixel)( int x, int y ); //Unsafe plot pixel.
-uint8_t * frontframe;
 int16_t ModelviewMatrix[16];
 int16_t ProjectionMatrix[16];
 uint8_t CNFGBGColor;
@@ -230,47 +229,21 @@ void ICACHE_FLASH_ATTR LocalToScreenspace( int16_t * coords_3v, int16_t * o1, in
 	}
 }
 
-void CNFGTackPixelW( int x, int y )
-{
-	frontframe[(x+y*video_broadcast_framebuffer_width())>>2] |=   2<<( (x&3)<<1 );
-}
-
-void CNFGTackPixelB( int x, int y )
-{
-	frontframe[(x+y*video_broadcast_framebuffer_width())>>2] &= ~(2<<( (x&3)<<1 ));
-}
 
 void CNFGTackPixelG( int x, int y )
 {
-	uint8_t * ffs = &frontframe[(x+y*(video_broadcast_framebuffer_width()/2) )>>1];
-	if( x & 1 )
-	{
-		*ffs = (*ffs & 0x0f) | CNFGLastColor<<4;
-	}
-	else
-	{
-		*ffs = (*ffs & 0xf0 ) | CNFGLastColor;
-	}
+	video_broadcast_tack_pixel(x,y, CNFGLastColor);
 }
 
 void CNFGColor( uint8_t col )
 {
 	CNFGLastColor = col;
-	if( col == 16 )
-	{
+	if( col > 15 ) {
 		LTW = video_broadcast_framebuffer_width();
-		CNFGTackPixel = CNFGTackPixelB;
-	}
-	else if( col == 17 )
-	{
-		LTW = video_broadcast_framebuffer_width();
-		CNFGTackPixel = CNFGTackPixelW;
-	}
-	else
-	{
+	} else {
 		LTW = video_broadcast_framebuffer_width()/2;
-		CNFGTackPixel = CNFGTackPixelG;
 	}
+	CNFGTackPixel = CNFGTackPixelG;
 }
 
 int LABS( int x )

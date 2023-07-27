@@ -1,8 +1,8 @@
 {
     "name": "esp8266channel3lib",
-    "version": "0.3.0",
+    "version": "1.0.0",
     "keywords": "tvout, esp8266, tv, graphics",
-    "description": "A library to emulate an analogue tv station on channel 3 with an ESP8266",
+    "description": "A library to emulate an analogue tv station on channel 3 with an ESP8266. Simply attach an antenna to the RX pin and tune a TV to channel 3. Uses I2S and DMA.",
     "repository":
     {
       "type": "git",

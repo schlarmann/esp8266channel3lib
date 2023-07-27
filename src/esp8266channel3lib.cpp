@@ -28,22 +28,17 @@ static int runTimerPeriod;
 static bool runFlag;
 
 // --- Private Functions ---
-LOCAL void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
-{
-   ets_memset( ff, 0, ((video_broadcast_framebuffer_width()/4)*video_broadcast_framebuffer_height()) );
-   if(frameCB != NULL){
-    frameCB(ff); //callback
-   }
-}
-
+/**
+ * @brief Timer callback to load a frame
+ */
 LOCAL void ICACHE_FLASH_ATTR frameTimer(){
 	static uint8_t lastframe = 0;
 	uint8_t tbuffer = !(video_broadcast_get_frame_number()&1);
-	if( lastframe != tbuffer )
+	if( lastframe != tbuffer ) // New frame
 	{
-		frontframe = (uint8_t*)&video_broadcast_get_framebuffer()
-            [ ( (video_broadcast_framebuffer_width()/8) *video_broadcast_framebuffer_height() ) * tbuffer];
-		loadFrame(frontframe);
+        if(frameCB != NULL){
+            frameCB(); //callback
+        }
 		lastframe = tbuffer;
 	}
 }

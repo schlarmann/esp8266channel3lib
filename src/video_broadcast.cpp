@@ -49,8 +49,8 @@ Extra copyright info:
 #include "CbTable.h" 
 #include "dmastuff.h"
 
+// I2S Config
 #define FUNC_I2SO_DATA                      1
-
 #define WS_I2S_BCK 1  //Can't be less than 1.
 #define WS_I2S_DIV 2
 
@@ -78,29 +78,29 @@ Extra copyright info:
 #define LINE_SIGNAL_INTERVAL_NTSC 147
 #define COLORBURST_INTERVAL_NTSC 4
 
+/** @brief writes COLOR to the DMA buffer at the next position */
+#define WRITE_TO_DMA(COLOR) *(dma_cursor++) = tablept[(COLOR)]; tablept += PREMOD_SIZE;
+
 //Bit clock @ 80MHz = 12.5ns
 //Word clock = 400ns
 //Each NTSC line = 15,734.264 Hz.  63556 ns
 //Each group of 4 bytes = 
 
-#define LINETYPES 6
-
 //I2S DMA buffer descriptors
 static struct sdio_queue i2sBufDesc[DMABUFFERDEPTH];
 uint32_t *i2sBD;
 
-//Queue which contains empty DMA buffers
-
-//This routine is called as soon as the DMA routine has something to tell us. All we
-//handle here is the RX_EOF_INT status, which indicate the DMA has sent a buffer whose
-//descriptor has the 'EOF' field set to 1.
-LOCAL int gline = 0;
-LOCAL int gframe = 0; //Current frame #
-LOCAL int linescratch;
-LOCAL uint16_t fbh;
+/** @brief current line number being displayed */
+LOCAL int signal_line_number = 0;
+/** @brief current frame number */
+LOCAL int frame_number = 0;
+/** @brief height of frame buffer */
+LOCAL uint16_t fb_height;
+/** @brief pointer to frame buffer */
 LOCAL uint16_t *framebuffer;
 
-LOCAL uint8_t *CbLookup;
+/** @brief Line callback lookup table*/
+LOCAL uint8_t *lineCbLookupTable;
 
 LOCAL uint8_t lineBufferLen;
 LOCAL uint8_t shortSyncInterval;
@@ -109,13 +109,15 @@ LOCAL uint8_t normalSyncInterval;
 LOCAL uint8_t lineSignalInterval;
 LOCAL uint8_t colorburstInterval;
 
-const uint32_t * tablestart = &premodulated_table[0];
-const uint32_t * tablept = &premodulated_table[0];
-const uint32_t * tableend = &premodulated_table[PREMOD_ENTRIES*PREMOD_SIZE];
-LOCAL uint32_t * curdma;
+const uint32_t *tablestart = &premodulated_table[0];
+const uint32_t *tablept = &premodulated_table[0];
+const uint32_t *tableend = &premodulated_table[PREMOD_ENTRIES*PREMOD_SIZE];
+LOCAL uint32_t *dma_cursor;
 
-LOCAL uint8_t pixline; //line number currently being written out.
+/** @brief line number in frame buffer / of actual video data currently being written out. */
+LOCAL uint16_t fb_line_number;
 
+/** @brief PAL or NTSC */
 LOCAL channel3VideoType_t videoStandard;
 
 //Each "qty" is 32 bits, or .4us
@@ -125,32 +127,29 @@ LOCAL void fillwith( uint16_t qty, uint8_t color )
 	//We're using this one.
 	if( qty & 1 )
 	{
-		*(curdma++) = tablept[color]; tablept += PREMOD_SIZE;
+		WRITE_TO_DMA(color);
 	}
 	qty>>=1;
-	for( linescratch = 0; linescratch < qty; linescratch++ )
+	for(int i = 0; i < qty; i++ )
 	{
-		*(curdma++) = tablept[color]; tablept += PREMOD_SIZE;
-		*(curdma++) = tablept[color]; tablept += PREMOD_SIZE;
+		WRITE_TO_DMA(color);
+		WRITE_TO_DMA(color);
 		if( tablept >= tableend ) tablept = tablept - tableend + tablestart;
 	}
 }
 
-
-//XXX TODO: Revisit the length of time the system is at SYNC, BLACK, etc.
-
-LOCAL void FT_STA() // Short Sync
+/** @brief Short Sync cb */
+LOCAL void FT_STA()
 {
-	pixline = 0; //Reset the framebuffer out line count (can be done multiple times)
+	fb_line_number = 0; //Reset the framebuffer out line count (can be done multiple times)
 
 	fillwith( shortSyncInterval, SYNC_LEVEL );
 	fillwith( longSyncInterval, BLACK_LEVEL );
 	fillwith( shortSyncInterval, SYNC_LEVEL );
 	fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+shortSyncInterval), BLACK_LEVEL );
 }
-
-
-LOCAL void FT_STB() // Long Sync
+/** @brief Long Sync cb */
+LOCAL void FT_STB()
 {
 	fillwith( longSyncInterval, SYNC_LEVEL );
 	if(videoStandard == PAL){
@@ -165,19 +164,21 @@ LOCAL void FT_STB() // Long Sync
 		fillwith( lineBufferLen - (longSyncInterval+normalSyncInterval+longSyncInterval), BLACK_LEVEL );
 	}
 }
-
-//Margin at top and bottom of screen (Mostly invisible)
-//Closed Captioning would go somewhere in here, I guess?
-LOCAL void FT_B() // Black
+/** 
+ * @brief Black cb. 
+ * Margin at top and bottom of screen (Mostly invisible)
+ * Closed Captioning would go somewhere in here, I guess?
+ */
+LOCAL void FT_B()
 {
 	fillwith( normalSyncInterval, SYNC_LEVEL );
 	fillwith( 2, BLACK_LEVEL );
 	fillwith( colorburstInterval, COLORBURST_LEVEL );
-	fillwith( lineBufferLen-normalSyncInterval-2-colorburstInterval, (pixline<1)?GRAY_LEVEL:BLACK_LEVEL);
+	fillwith( lineBufferLen-normalSyncInterval-2-colorburstInterval, (fb_line_number<1)?GRAY_LEVEL:BLACK_LEVEL);
 	//Gray seems to help sync if at top.  TODO: Investigate if white works even better!
 }
-
-LOCAL void FT_SRA() // Short to long
+/** @brief Short to long cb */
+LOCAL void FT_SRA()
 {
 	fillwith( shortSyncInterval, SYNC_LEVEL );
 	fillwith( longSyncInterval, BLACK_LEVEL );
@@ -189,8 +190,8 @@ LOCAL void FT_SRA() // Short to long
 		fillwith( lineBufferLen - (shortSyncInterval+longSyncInterval+SERRATION_PULSE_INT_NTSC), BLACK_LEVEL );
 	}
 }
-
-LOCAL void FT_SRB() // Long to short
+/** @brief Long to short cb */
+LOCAL void FT_SRB()
 {
 	if(videoStandard == PAL){
 		fillwith( longSyncInterval, SYNC_LEVEL );
@@ -204,37 +205,53 @@ LOCAL void FT_SRB() // Long to short
 		fillwith( lineBufferLen - (SERRATION_PULSE_INT_NTSC+normalSyncInterval+shortSyncInterval), BLACK_LEVEL );
 	}
 }
-
-LOCAL void FT_LIN() // Line Signal
+/** @brief Line Signal cb */
+LOCAL void FT_LIN()
 {
-	//TODO: Make this do something useful.
+	// Front porch / HBlank
 	fillwith( normalSyncInterval, SYNC_LEVEL );
 	fillwith( 1, BLACK_LEVEL );
 	fillwith( colorburstInterval, COLORBURST_LEVEL );
 	fillwith( 11, BLACK_LEVEL );
 
-	int fframe = gframe & 1;
-	uint16_t * fbs = (uint16_t*)(&framebuffer[ ( (pixline * (FBW2/2)) + ( ((FBW2/2)*(fbh))*(fframe)) ) / 2 ]);
+	int fframe = frame_number & 1; 
+	uint16_t *fb_line;
+	if(frame_number & 1){ // Even / Odd frame
+		fb_line = (uint16_t*)(&framebuffer[ 
+		( 
+			(fb_line_number * (FBW2/2)) + 
+			((FBW2/2)*(fb_height))
+		) / 2]);
+	} else {
+		fb_line = (uint16_t*)(&framebuffer[ 
+		( 
+			(fb_line_number * (FBW2/2))
+		) / 2]);
+	}
 
-	for( linescratch = 0; linescratch < FBW2/4; linescratch++ )
+	// Drawing video data
+	// Each line is divided into FBW2/4 = 232/8 = 29 Blocks. 
+	for(int line_block_i = 0; line_block_i < FBW2/4; line_block_i++ )
 	{
-		uint16_t fbb;
-		fbb = fbs[linescratch];
-		*(curdma++) = tablept[(fbb>>0)&15];		tablept += PREMOD_SIZE;
-		*(curdma++) = tablept[(fbb>>4)&15];		tablept += PREMOD_SIZE;
-		*(curdma++) = tablept[(fbb>>8)&15];		tablept += PREMOD_SIZE;
-		*(curdma++) = tablept[(fbb>>12)&15];	tablept += PREMOD_SIZE;
+		uint16_t line_block = fb_line[line_block_i];
+		// Each line block is contains
+		//  - 8 B/W pixels or
+		//  - 4 color pixels
+
+		WRITE_TO_DMA((line_block>>0)&0x0F);
+		WRITE_TO_DMA((line_block>>4)&0x0F);
+		WRITE_TO_DMA((line_block>>8)&0x0F);
+		WRITE_TO_DMA((line_block>>12)&0x0F);
 		if( tablept >= tableend ) tablept = tablept - tableend + tablestart;
 	}
 
-	fillwith( lineBufferLen - ((normalSyncInterval+1+colorburstInterval+11)+FBW2), BLACK_LEVEL); //WHITE_LEVEL );
+	// Back porch / HBlank
+	fillwith( lineBufferLen - (normalSyncInterval+1+colorburstInterval+11+FBW2), BLACK_LEVEL);
 
-	pixline++;
+	fb_line_number++;
 }
-
-static uint32_t systimex = 0;
-static uint32_t systimein = 0;
-LOCAL void FT_CLOSE_M() // End Frame
+/** @brief End Frame cb */
+LOCAL void FT_CLOSE_M()
 {
 	if(videoStandard == PAL){
 		fillwith( shortSyncInterval, SYNC_LEVEL );
@@ -247,18 +264,15 @@ LOCAL void FT_CLOSE_M() // End Frame
 		fillwith( 4, COLORBURST_LEVEL );
 		fillwith( lineBufferLen-normalSyncInterval-6, WHITE_LEVEL );
 	}
-	gline = -1;
-	gframe++;
-
-	systimex = 0;
-	systimein = system_get_time();
+	signal_line_number = -1;
+	frame_number++;
 }
 
+/** @brief Line type callback table */
+void (*lineCbTable[FT_MAX_d])() = { FT_STA, FT_STB, FT_B, FT_SRA, FT_SRB, FT_LIN, FT_CLOSE_M };
 
-void (*CbTable[FT_MAX_d])() = { FT_STA, FT_STB, FT_B, FT_SRA, FT_SRB, FT_LIN, FT_CLOSE_M };
-
+/** @brief I2S DMA interrupt handler */
 LOCAL void slc_isr(void *unused1, void *unused2) {
-	//portBASE_TYPE HPTaskAwoken=0;
 	struct sdio_queue *finishedDesc;
 	uint32 slc_intr_status;
 
@@ -269,19 +283,16 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 	{
 		//The DMA subsystem is done with this block: Push it on the queue so it can be re-used.
 		finishedDesc=(struct sdio_queue*)READ_PERI_REG(SLC_RX_EOF_DES_ADDR);
-		curdma = (uint32_t*)finishedDesc->buf_ptr;
-		if(curdma != NULL){
-			//*startdma = premodulated_table[0];
-			int lk = 0;
-			if( gline & 1 )
-				lk = (CbLookup[gline>>1]>>4)&0x0f;
-			else
-				lk = CbLookup[gline>>1]&0x0f;
+		dma_cursor = (uint32_t*)finishedDesc->buf_ptr;
+		if(dma_cursor != NULL){
+			int currentLineType = 0;
+			if( signal_line_number & 1 ) // Odd frame
+				currentLineType = (lineCbLookupTable[signal_line_number>>1]>>4)&0x0f;
+			else // Even frame
+				currentLineType = lineCbLookupTable[signal_line_number>>1]&0x0f;
 
-			systimein = system_get_time();
-			CbTable[lk]();
-			systimex += system_get_time() - systimein;
-			gline++;
+			lineCbTable[currentLineType]();
+			signal_line_number++;
 		}
 		
 	}
@@ -289,8 +300,8 @@ LOCAL void slc_isr(void *unused1, void *unused2) {
 
 //Initialize I2S subsystem for DMA circular buffer use
 void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
-	int x = 0;
 	videoStandard = videoType;
+	// Populate various constants based on video standard
 	if(videoStandard == PAL){
 		lineBufferLen = LINE_BUFFER_LENGTH_PAL;
 		shortSyncInterval = SHORT_SYNC_INTERVAL_PAL;
@@ -298,8 +309,8 @@ void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 		normalSyncInterval = NORMAL_SYNC_INTERVAL_PAL;
 		lineSignalInterval = LINE_SIGNAL_INTERVAL_PAL;
 		colorburstInterval = COLORBURST_INTERVAL_PAL;
-		fbh = FBH_PAL;
-		CbLookup = CbLookupPAL;
+		fb_height = FBH_PAL;
+		lineCbLookupTable = CbLookupPAL;
 	} else {
 		lineBufferLen = LINE_BUFFER_LENGTH_NTSC;
 		shortSyncInterval = SHORT_SYNC_INTERVAL_NTSC;
@@ -307,19 +318,17 @@ void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 		normalSyncInterval = NORMAL_SYNC_INTERVAL_NTSC;
 		lineSignalInterval = LINE_SIGNAL_INTERVAL_NTSC;
 		colorburstInterval = COLORBURST_INTERVAL_NTSC;
-		fbh = FBH_NTSC;
-		CbLookup = CbLookupNTSC;
+		fb_height = FBH_NTSC;
+		lineCbLookupTable = CbLookupNTSC;
 	}
 
 	// Create dynamic data
-	framebuffer = (uint16_t *) malloc(sizeof(uint16_t) * ( (FBW2/4)*fbh ) *2);
+	framebuffer = (uint16_t *) malloc(sizeof(uint16_t) * ( (FBW2/4)*fb_height ) *2);
 	i2sBD = (uint32_t *) malloc(sizeof(uint32_t) * (lineBufferLen*DMABUFFERDEPTH));
-
-	//Bits are shifted out
 
 	//Initialize DMA buffer descriptors in such a way that they will form a circular
 	//buffer.
-	for (x=0; x<DMABUFFERDEPTH; x++) {
+	for (int x=0; x<DMABUFFERDEPTH; x++) {
 		i2sBufDesc[x].owner=1;
 		i2sBufDesc[x].eof=1;
 		i2sBufDesc[x].sub_sof=0;
@@ -363,23 +372,12 @@ void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType) {
 	///enable DMA intr in cpu
 	ets_isr_unmask(1<<ETS_SLC_INUM);
 
-	//We use a queue to keep track of the DMA buffers that are empty. The ISR will push buffers to the back of the queue,
-	//the mp3 decode will pull them from the front and fill them. For ease, the queue will contain *pointers* to the DMA
-	//buffers, not the data itself. The queue depth is one smaller than the amount of buffers we have, because there's
-	//always a buffer that is being used by the DMA subsystem *right now* and we don't want to be able to write to that
-	//simultaneously.
-	//dmaQueue=xQueueCreate(I2SDMABUFCNT-1, sizeof(int*));
-
 	//Start transmission
 	SET_PERI_REG_MASK(SLC_TX_LINK, SLC_TXLINK_START);
 	SET_PERI_REG_MASK(SLC_RX_LINK, SLC_RXLINK_START);
 
-//----
-
-	//Init pins to i2s functions
+	//Init pins to i2s functions. We only need data out
 	PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0RXD_U, FUNC_I2SO_DATA);
-//	PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO2_U, FUNC_I2SO_WS);
-//	PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U, FUNC_I2SO_BCK);
 
 	//Enable clock to i2s subsystem
 	i2c_writeReg_Mask_def(i2c_bbpll, i2c_bbpll_en_audio_clock_out, 1);
@@ -457,12 +455,64 @@ uint16_t *video_broadcast_get_framebuffer(){
 	return framebuffer;
 }
 int video_broadcast_get_frame_number(){
-	return gframe;
+	return frame_number;
 }
 uint16_t video_broadcast_framebuffer_width(){
 	return FBW;
 }
-
 uint16_t video_broadcast_framebuffer_height(){
-	return fbh;
+	return fb_height;
+}
+
+uint8_t * video_broadcast_get_frame(){
+	bool isOddFrame = frame_number&0x01;
+	if(!isOddFrame) return (uint8_t*)&framebuffer[0];
+	return (uint8_t*)&framebuffer[(FBW2/4) *fb_height];
+}
+
+void video_broadcast_clear_frame(){
+	bool isOddFrame = frame_number&0x01;
+	if(!isOddFrame) ets_memset( (uint8_t*)&framebuffer[0], 0, ((FBW/4)*fb_height) );
+	else ets_memset( (uint8_t*)&framebuffer[(FBW2/4) *fb_height], 0, ((FBW/4)*fb_height) );
+}
+
+void video_tack_dd_pixel(uint8_t *current_frame, int x, int y, uint8_t color){
+	// Check for illegal pixels
+	if(x > FBW) return;
+	if(y > fb_height) return;
+	if(color > C3_COL_DD_WHITE) return;
+	
+	// Put color in buffer
+	uint8_t *half_block = &(current_frame[(x+y*FBW)>>2]);
+	if(color == C3_COL_DD_WHITE) {
+		*half_block |= 0b10 <<((x&0b11)<<1);
+	} else {
+		*half_block &= ~( 0b10 <<((x&0b11)<<1) );
+	}
+}
+void video_tack_pixel(uint8_t *current_frame, int x, int y, uint8_t color){
+	// Check for illegal pixels
+	if(x > FBW) return;
+	if(y > fb_height) return;
+	if(color > C3_COL_DD_WHITE) return;
+
+	// Call DD function if needed
+	if(color >= C3_COL_DD_BLACK){
+		video_tack_dd_pixel(current_frame, x, y, color);
+		return;
+	}
+
+	// Put color in buffer
+	uint8_t *half_block = &(current_frame[(x+y*(FBW/2) )>>1]);
+	if( x & 1 ) {
+		*half_block = (*half_block & 0x0f) | color<<4;
+	} else {
+		*half_block = (*half_block & 0xf0 ) | color;
+	}
+}
+
+void video_broadcast_tack_pixel(int x, int y, uint8_t color){
+	bool isOddFrame = frame_number&0x01;
+	if(!isOddFrame) video_tack_pixel((uint8_t*)&framebuffer[0], x, y, color);
+	else video_tack_pixel((uint8_t*)&framebuffer[(FBW2/4) *fb_height], x, y, color);
 }

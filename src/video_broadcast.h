@@ -23,13 +23,50 @@
 
 #define DMABUFFERDEPTH 3
 
+/**
+ * @brief Initialize the video broadcast. Generates video of the specified type.
+ * 
+ * @param videoType Type, either NTSC or PAL
+ */
 void ICACHE_FLASH_ATTR video_broadcast_init(channel3VideoType_t videoType);
+/**
+ * @brief Deinitialize the video broadcast
+ */
 void video_broadcast_deinit();
 
-uint16_t *video_broadcast_get_framebuffer();
+/**
+ * @brief Gets the current frame number
+ * 
+ * @return int current frame number
+ */
 int video_broadcast_get_frame_number();
+/**
+ * @return uint16_t Width of the framebuffer
+ */
 uint16_t video_broadcast_framebuffer_width();
+/**
+ * @return uint16_t Height of the framebuffer
+ */
 uint16_t video_broadcast_framebuffer_height();
+
+/**
+ * @brief Get the framebuffer
+ * 
+ * @return uint8_t* Pointer to the framebuffer
+ */
+uint8_t *video_broadcast_get_frame();
+/**
+ * @brief Clear the framebuffer
+ */
+void video_broadcast_clear_frame();
+/**
+ * @brief Puts a pixel onto the screen
+ * 
+ * @param x X-Coordinate
+ * @param y Y-Coordinate
+ * @param color Color as specified in enum channel3ColorType_t
+ */
+void video_broadcast_tack_pixel(int x, int y, uint8_t color);
 
 #endif
 

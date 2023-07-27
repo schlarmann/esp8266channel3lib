@@ -23,14 +23,35 @@
 // --- Marcos ---
 
 // --- Typedefs ---
-typedef void (*loadFrameCB)(uint8_t *frame);
+/**
+ * @brief Callback function to load a frame
+ * 
+ * @param frame Pointer to the frame buffer
+ */ 
+typedef void (*loadFrameCB)();
 // --- Public Vars ---
 
 // --- Public Functions ---
 
+/**
+ * @brief Initialize the channel 3 library
+ * 
+ * @param videoType The video type to use
+ * @param loadFrameCB The callback function to load a frame
+ */
 void ICACHE_FLASH_ATTR channel3Init(channel3VideoType_t videoType, loadFrameCB loadFrameCB);
+/**
+ * @brief Deinitialize the channel 3 library
+ */
 void channel3Deinit();
+
+/**
+ * @brief Stop the broadcast
+ */
 void channel3StopBroadcast();
+/**
+ * @brief Start the broadcast
+ */
 void channel3StartBroadcast();
 
 #endif /* ESP8266CHANNEL3LIB_H */

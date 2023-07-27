@@ -3,25 +3,22 @@
 uint32_t frameCount = 0;
 
 // This callback gets called automatically every frame
-void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
-{
-  if(ff != NULL){
-    ets_memset( ff, 0, ((232/4)*220) );
+void ICACHE_FLASH_ATTR loadFrame() {
+    video_broadcast_clear_frame();
     
     int * px = &CNFGPenX;
     int * py = &CNFGPenY;
     *px = 3;
     *py = 4;
-    CNFGColor( 17 );
+    CNFGColor( C3_COL_DD_WHITE );
     //CNFGTackRectangle( 0, 0, (58*4)-1, (55/2)-1);
     CNFGDrawText("Title", 2 );
     
     *py = 190;
-    CNFGColor( 17 );
+    CNFGColor( C3_COL_DD_WHITE );
     char content[255];
     sprintf(content, "Frames: %u", frameCount++);
     CNFGDrawText(content, 2 );
-  }
 }
 
 void setup() {

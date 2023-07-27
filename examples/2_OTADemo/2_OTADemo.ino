@@ -12,27 +12,31 @@
 uint32_t frameCount = 0;
 
 // This callback gets called automatically every frame
-void ICACHE_FLASH_ATTR loadFrame(uint8_t * ff)
-{
-  if(ff != NULL){
-    
-    int * px = &CNFGPenX;
-    int * py = &CNFGPenY;
-    *px = 10;
-    *py = 4;
-    CNFGColor( 17 );
-    CNFGDrawText("ESP8266 Channel 3 OTA Demo", 2 );
-    *py = 14;
-    CNFGDrawText("SSID: ESP_Channel3", 2 );
-    *py = 24;
-    CNFGDrawText("PW:   ESP_Channel3", 2 );
-    
-    *py = 190;
-    CNFGColor( 17 );
-    char content[255];
-    sprintf(content, "Frames: %u", frameCount++);
-    CNFGDrawText(content, 2 );
+void ICACHE_FLASH_ATTR loadFrame() {
+  video_broadcast_clear_frame();
+  
+  int * px = &CNFGPenX;
+  int * py = &CNFGPenY;
+  *px = 10;
+  *py = 4;
+  CNFGColor( C3_COL_DD_WHITE );
+  CNFGDrawText("ESP8266 Channel 3 OTA Demo", 2 );
+  *py = 14;
+  CNFGDrawText("SSID: ESP_Channel3", 2 );
+  *py = 24;
+  CNFGDrawText("PW:   ESP_Channel3", 2 );
+
+  // Draw a line
+  for(int i=0; i<video_broadcast_framebuffer_width(); i+=2){
+    video_broadcast_tack_pixel(i, 40, C3_COL_DD_WHITE);
+    video_broadcast_tack_pixel(i+1, 40, C3_COL_DD_BLACK);
   }
+  
+  *py = 190;
+  CNFGColor( C3_COL_DD_WHITE );
+  char content[255];
+  sprintf(content, "Frames: %u", frameCount++);
+  CNFGDrawText(content, 2 );
 }
 
 void setup() {
